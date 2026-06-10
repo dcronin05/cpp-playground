@@ -1,0 +1,426 @@
+// Application state variables
+let ws = null;
+let sessionId = localStorage.getItem('cpp_repl_session_id') || null;
+let editor = null;
+let term = null;
+let fitAddon = null;
+let inputBuffer = '';
+let history = [];
+let historyIndex = -1;
+let isExecuting = false;
+
+// Standard C++ templates for snippets
+const SNIPPETS = {
+    vector: `#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <numeric>
+
+int main() {
+    std::vector<int> v = {4, 1, 5, 2, 3};
+    std::sort(v.begin(), v.end());
+    
+    std::cout << "Sorted vector: ";
+    for (int x : v) {
+        std::cout << x << " ";
+    }
+    std::cout << "\\nSum of elements: " 
+              << std::accumulate(v.begin(), v.end(), 0) << std::endl;
+    return 0;
+}`,
+    lambda: `#include <iostream>
+#include <vector>
+#include <algorithm>
+
+int main() {
+    auto square = [](int x) { return x * x; };
+    std::cout << "Square of 8 is " << square(8) << std::endl;
+    
+    std::vector<int> nums = {1, 2, 3, 4};
+    std::for_each(nums.begin(), nums.end(), [](int &n) {
+        n *= 2;
+    });
+    
+    std::cout << "Doubled elements: ";
+    for (int n : nums) std::cout << n << " ";
+    std::cout << std::endl;
+    return 0;
+}`,
+    pointers: `#include <iostream>
+#include <memory>
+
+class Entity {
+public:
+    Entity() { std::cout << "Entity Created!" << std::endl; }
+    ~Entity() { std::cout << "Entity Destroyed!" << std::endl; }
+    void Speak() { std::cout << "Hello from Entity!" << std::endl; }
+};
+
+int main() {
+    std::cout << "--- Unique Pointer Block ---" << std::endl;
+    {
+        std::unique_ptr<Entity> entity = std::make_unique<Entity>();
+        entity->Speak();
+    } // entity is automatically destroyed
+    std::cout << "--- Block End ---" << std::endl;
+    return 0;
+}`,
+    bindings: `#include <iostream>
+#include <map>
+#include <string>
+
+int main() {
+    // C++17 Structured Bindings
+    std::map<std::string, int> ages = {
+        {"Alice", 24},
+        {"Bob", 30},
+        {"Charlie", 28}
+    };
+    
+    for (const auto& [name, age] : ages) {
+        std::cout << name << " is " << age << " years old." << std::endl;
+    }
+    return 0;
+}`
+};
+
+// Initialize the WebSocket connection
+function initWebSocket() {
+    updateStatus('connecting', 'Connecting...');
+    
+    let wsUrl;
+    if (window.location.protocol === 'file:' || !window.location.host) {
+        wsUrl = 'ws://localhost:3000';
+    } else {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${protocol}//${window.location.host}`;
+    }
+    
+    console.log(`Connecting to WebSocket at: ${wsUrl}`);
+    ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => {
+        console.log('WebSocket connection opened');
+        ws.send(JSON.stringify({
+            type: 'init',
+            sessionId: sessionId
+        }));
+    };
+    
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'init_ok') {
+            sessionId = data.sessionId;
+            localStorage.setItem('cpp_repl_session_id', sessionId);
+            document.getElementById('session-id-display').textContent = sessionId.substring(0, 8);
+            updateStatus('connected', 'Connected');
+            
+            // Render the cumulative compilation state
+            updateProgramStateView(data.state);
+            
+            // Print initial terminal screen
+            term.write('\r\x1b[K'); // clear line
+            term.write('\x1b[36mc++ > \x1b[0m');
+        }
+        
+        else if (data.type === 'status') {
+            // Write transient status line
+            term.write(`\r\x1b[K\x1b[90m[${data.message}]\x1b[0m`);
+            isExecuting = true;
+        }
+        
+        else if (data.type === 'output') {
+            isExecuting = false;
+            term.write('\r\x1b[K'); // clear compile status line
+            
+            if (data.stdout) {
+                term.write(data.stdout.replace(/\n/g, '\r\n'));
+            }
+            if (data.stderr) {
+                term.write(`\x1b[31m${data.stderr.replace(/\n/g, '\r\n')}\x1b[0m`);
+            }
+            if (data.error) {
+                term.write(`\x1b[1;31m${data.error.replace(/\n/g, '\r\n')}\x1b[0m`);
+            }
+            
+            if (data.state) {
+                updateProgramStateView(data.state);
+            }
+            
+            term.write('\x1b[36mc++ > \x1b[0m');
+        }
+        
+        else if (data.type === 'error') {
+            isExecuting = false;
+            term.write('\r\x1b[K');
+            term.write(`\x1b[1;31mServer Error: ${data.message}\r\n\x1b[0m`);
+            term.write('\x1b[36mc++ > \x1b[0m');
+        }
+    };
+    
+    ws.onclose = () => {
+        console.log('WebSocket connection closed');
+        updateStatus('disconnected', 'Disconnected');
+        term.write('\r\n\x1b[31mConnection lost. Retrying in 5s...\x1b[0m\r\n');
+        setTimeout(initWebSocket, 5000);
+    };
+    
+    ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+    };
+}
+
+// Update UI status badges
+function updateStatus(cls, text) {
+    const badge = document.getElementById('status-badge');
+    const badgeText = document.getElementById('status-text');
+    badge.className = `status-badge ${cls}`;
+    badgeText.textContent = text;
+}
+
+// Update the code display panel with active variables and declarations
+function updateProgramStateView(state) {
+    if (!state) return;
+    
+    const pre = document.getElementById('state-code-view');
+    let code = '';
+    
+    code += '// --- HEADERS ---\n';
+    code += state.headers.join('\n') + '\n\n';
+    
+    if (state.globals.length > 0) {
+        code += '// --- GLOBAL DECLARATIONS ---\n';
+        code += state.globals.join('\n\n') + '\n\n';
+    }
+    
+    code += '// --- LOCAL STATEMENTS ---\n';
+    code += 'int main() {\n';
+    if (state.locals.length > 0) {
+        state.locals.forEach(stmt => {
+            code += '    ' + stmt + '\n';
+        });
+    } else {
+        code += '    // Execute lines in REPL to view variables here\n';
+    }
+    code += '    return 0;\n}';
+    
+    pre.textContent = code;
+}
+
+// Set up Monaco Editor
+function initMonaco() {
+    require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' } });
+    require(['vs/editor/editor.main'], () => {
+        editor = monaco.editor.create(document.getElementById('editor-container'), {
+            value: `// Write a full C++ program to run as Standalone,
+// or write variables/functions to inject in the REPL.
+
+#include <iostream>
+#include <vector>
+
+int main() {
+    std::cout << "Hello, C++ REPL!" << std::endl;
+    return 0;
+}`,
+            language: 'cpp',
+            theme: 'vs-dark',
+            automaticLayout: true,
+            fontSize: 13,
+            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+            minimap: { enabled: false },
+            lineHeight: 20,
+            padding: { top: 10 }
+        });
+    });
+}
+
+// Set up Xterm.js terminal
+function initXterm() {
+    term = new Terminal({
+        cursorBlink: true,
+        theme: {
+            background: '#030712',
+            foreground: '#f1f5f9',
+            cursor: '#00f2fe',
+            selectionBackground: 'rgba(0, 242, 254, 0.3)'
+        },
+        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+        fontSize: 13,
+        lineHeight: 1.3
+    });
+    
+    fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById('terminal-container'));
+    fitAddon.fit();
+    
+    // Welcome Header
+    term.write('\x1b[1;36m======================================================\r\n');
+    term.write('      C++ Interactive Sandbox REPL Playground\r\n');
+    term.write('======================================================\x1b[0m\r\n');
+    term.write('Type C++ statements and press \x1b[1;33mEnter\x1b[0m to execute.\r\n');
+    term.write('Variables persist. Define functions & structs globally.\r\n\r\n');
+    
+    // Resize listener
+    window.addEventListener('resize', () => {
+        if (fitAddon) fitAddon.fit();
+    });
+    
+    // Handle inputs
+    term.onData(data => {
+        if (isExecuting) return; // Prevent typing while compile is in progress
+        
+        for (let i = 0; i < data.length; i++) {
+            const char = data[i];
+            
+            if (char === '\r') { // Enter Key
+                const cmd = inputBuffer.trim();
+                term.write('\r\n');
+                if (cmd) {
+                    executeInRepl(cmd);
+                    // Add command to history
+                    if (history.length === 0 || history[history.length - 1] !== cmd) {
+                        history.push(cmd);
+                    }
+                    historyIndex = history.length;
+                } else {
+                    term.write('\x1b[36mc++ > \x1b[0m');
+                }
+                inputBuffer = '';
+            } 
+            else if (char === '\x7f' || char === '\b') { // Backspace Key
+                if (inputBuffer.length > 0) {
+                    inputBuffer = inputBuffer.slice(0, -1);
+                    term.write('\b \b');
+                }
+            } 
+            else if (data.slice(i, i + 3) === '\x1b[A') { // Arrow Up
+                i += 2; // skip escape chars
+                if (history.length > 0 && historyIndex > 0) {
+                    // Backspace current characters
+                    for (let j = 0; j < inputBuffer.length; j++) {
+                        term.write('\b \b');
+                    }
+                    historyIndex--;
+                    inputBuffer = history[historyIndex];
+                    term.write(inputBuffer);
+                }
+            } 
+            else if (data.slice(i, i + 3) === '\x1b[B') { // Arrow Down
+                i += 2;
+                if (history.length > 0 && historyIndex < history.length) {
+                    for (let j = 0; j < inputBuffer.length; j++) {
+                        term.write('\b \b');
+                    }
+                    historyIndex++;
+                    if (historyIndex === history.length) {
+                        inputBuffer = '';
+                    } else {
+                        inputBuffer = history[historyIndex];
+                    }
+                    term.write(inputBuffer);
+                }
+            } 
+            else if (char.charCodeAt(0) >= 32 && char.charCodeAt(0) <= 126) { // Printable ASCII
+                inputBuffer += char;
+                term.write(char);
+            }
+        }
+    });
+}
+
+// Execute command in the REPL
+function executeInRepl(code) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'repl_execute',
+            code: code
+        }));
+    }
+}
+
+// Setup Event Listeners
+function setupEventHandlers() {
+    // Run Standalone code
+    document.getElementById('btn-run-standalone').addEventListener('click', () => {
+        if (!editor) return;
+        const code = editor.getValue();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'standalone_run',
+                code: code
+            }));
+        }
+    });
+    
+    // Run selected code or all code in the REPL
+    document.getElementById('btn-run-repl').addEventListener('click', () => {
+        if (!editor) return;
+        
+        // Use selection if exists, otherwise use all editor text
+        const selection = editor.getSelection();
+        let code = '';
+        if (selection && !selection.isEmpty()) {
+            code = editor.getModel().getValueInRange(selection);
+        } else {
+            code = editor.getValue();
+        }
+        
+        // Notify user in terminal
+        term.write(`\r\n\x1b[35m[Running Editor Script in REPL Context...]\x1b[0m\r\n`);
+        executeInRepl(code);
+    });
+    
+    // Clear Editor
+    document.getElementById('btn-clear-editor').addEventListener('click', () => {
+        if (editor) editor.setValue('');
+    });
+    
+    // Reset REPL State
+    document.getElementById('btn-reset-repl').addEventListener('click', () => {
+        if (confirm('Are you sure you want to reset the REPL state? This will clear all variables, libraries, and functions.')) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'reset'
+                }));
+            }
+        }
+    });
+    
+    // Tabs Navigation
+    const tabs = document.querySelectorAll('.tab-btn');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Remove active class from other tabs
+            tabs.forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            // Activate current
+            tab.classList.add('active');
+            const targetId = tab.id.replace('tab-', 'tab-content-');
+            document.getElementById(targetId).classList.add('active');
+        });
+    });
+    
+    // Snippets Loading
+    const snippetItems = document.querySelectorAll('.snippet-item');
+    snippetItems.forEach(item => {
+        item.addEventListener('click', () => {
+            const key = item.getAttribute('data-snippet');
+            if (editor && SNIPPETS[key]) {
+                editor.setValue(SNIPPETS[key]);
+                // Switch tab back to active program view or code view for better context
+                document.getElementById('tab-code').click();
+            }
+        });
+    });
+}
+
+// Main Setup Entrypoint
+window.onload = () => {
+    initMonaco();
+    initXterm();
+    setupEventHandlers();
+    initWebSocket();
+};

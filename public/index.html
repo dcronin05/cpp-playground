@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C++ Interactive REPL Playground</title>
+    <meta name="description" content="A premium web-based C++ REPL playground with Monaco Editor, Xterm.js, and sandboxed Docker containers.">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- Xterm.js CSS -->
+    <link rel="stylesheet" href="/xterm/css/xterm.css" />
+    
+    <!-- Custom Styling -->
+    <link rel="stylesheet" href="index.css?v=2">
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- TOP HEADER -->
+        <header class="app-header">
+            <div class="logo-area">
+                <svg class="cpp-logo" viewBox="0 0 100 100" width="32" height="32">
+                    <circle cx="50" cy="50" r="45" fill="none" stroke="url(#logo-grad)" stroke-width="8" />
+                    <text x="28" y="66" fill="#fff" font-family="'JetBrains Mono', monospace" font-size="48" font-weight="bold">C</text>
+                    <path d="M 68,42 L 68,58 M 60,50 L 76,50 M 82,42 L 82,58 M 74,50 L 90,50" stroke="#00f2fe" stroke-width="4" stroke-linecap="round" />
+                    <defs>
+                        <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#4facfe" />
+                            <stop offset="100%" stop-color="#00f2fe" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <div class="logo-text">
+                    <h1>C++ Playground</h1>
+                    <span>Interactive Compiler Console</span>
+                </div>
+            </div>
+            
+            <div class="header-status">
+                <div id="status-badge" class="status-badge connecting">
+                    <span class="indicator"></span>
+                    <span id="status-text">Connecting...</span>
+                </div>
+                <div class="session-info">
+                    <span class="label">Session:</span>
+                    <span id="session-id-display" class="value">--------</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- MAIN LAYOUT -->
+        <main class="app-main">
+            <!-- LEFT COLUMN: SCRIPT EDITOR -->
+            <section class="panel-card editor-card">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        <h2>Script Editor</h2>
+                    </div>
+                    <div class="panel-actions">
+                        <button id="btn-run-standalone" class="btn btn-primary btn-glow" title="Compile and run standalone code (requires int main)">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                            Run Standalone
+                        </button>
+                        <button id="btn-run-repl" class="btn btn-secondary" title="Execute editor selection or all lines inside the REPL context">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                            Run in REPL
+                        </button>
+                        <button id="btn-clear-editor" class="btn btn-icon" title="Clear Editor">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="panel-body editor-body">
+                    <div id="editor-container"></div>
+                </div>
+            </section>
+
+            <!-- RIGHT COLUMN: TERMINAL REPL -->
+            <section class="panel-card terminal-card">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                        <h2>Interactive REPL</h2>
+                    </div>
+                    <div class="panel-actions">
+                        <button id="btn-reset-repl" class="btn btn-secondary btn-danger-hover" title="Reset REPL compilation state and restart container">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+                            Reset State
+                        </button>
+                    </div>
+                </div>
+                <div class="panel-body terminal-body">
+                    <div id="terminal-container"></div>
+                </div>
+            </section>
+        </main>
+
+        <!-- SIDEBAR / LOWER SECTION: STATE INSPECTOR & SNIPPETS -->
+        <footer class="app-footer">
+            <section class="panel-card state-card">
+                <div class="panel-header">
+                    <div class="tabs-header">
+                        <button id="tab-code" class="tab-btn active">Active C++ Program State</button>
+                        <button id="tab-snippets" class="tab-btn">Snippets Library</button>
+                        <button id="tab-help" class="tab-btn">REPL Tips</button>
+                    </div>
+                </div>
+                <div class="panel-body state-body">
+                    <!-- Tab Content: Active Code State -->
+                    <div id="tab-content-code" class="tab-content active">
+                        <div class="state-container">
+                            <div class="state-code-wrapper">
+                                <pre id="state-code-view" class="code-view"><code>// No active state loaded. Run statements in REPL to build compilation state.</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Tab Content: Snippets -->
+                    <div id="tab-content-snippets" class="tab-content">
+                        <div class="snippets-grid">
+                            <div class="snippet-item" data-snippet="vector">
+                                <h3>Vector Operations</h3>
+                                <p>Standard STL vector declaration, initialization, sorting, and printing.</p>
+                            </div>
+                            <div class="snippet-item" data-snippet="lambda">
+                                <h3>Lambda Expressions</h3>
+                                <p>Defining custom anonymous inline functions inside the REPL context.</p>
+                            </div>
+                            <div class="snippet-item" data-snippet="pointers">
+                                <h3>Smart Pointers</h3>
+                                <p>Using memory management with std::unique_ptr and std::shared_ptr.</p>
+                            </div>
+                            <div class="snippet-item" data-snippet="bindings">
+                                <h3>Structured Bindings</h3>
+                                <p>C++17 structured bindings to unpack pairs, tuples, or structs easily.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab Content: Help -->
+                    <div id="tab-content-help" class="tab-content">
+                        <div class="help-content">
+                            <h3>How to use the C++ REPL</h3>
+                            <ul>
+                                <li><strong>Local Statements:</strong> Type commands (like <code>int x = 42;</code> or <code>cout << x * 2 << endl;</code>) directly in the terminal and hit <strong>Enter</strong> to run.</li>
+                                <li><strong>Variable Preservation:</strong> Variables declared in previous commands (e.g. <code>string name = "Antigravity";</code>) are fully accessible in subsequent commands.</li>
+                                <li><strong>Global Declarations:</strong> You can define helper functions and structs (e.g. <code>struct User { string name; int age; };</code>). They are compiled in the global namespace.</li>
+                                <li><strong>Header Includes:</strong> Type <code>#include &lt;set&gt;</code> to dynamically load new library headers into your session.</li>
+                                <li><strong>Script Editor:</strong> Write larger programs in the editor. Click <strong>Run Standalone</strong> to run the entire script (must have <code>int main()</code>) or <strong>Run in REPL</strong> to inject the editor script directly into the running session.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </footer>
+    </div>
+
+    <!-- Xterm.js & Addons -->
+    <script src="/xterm/lib/xterm.js"></script>
+    <script src="/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
+
+    <!-- Monaco Editor VS Loader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script>
+    
+    <!-- Core Application Logic -->
+    <script src="app.js?v=2"></script>
+</body>
+</html>
