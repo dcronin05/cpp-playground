@@ -460,6 +460,20 @@ body {
     max-width: 800px;
 }
 
+.help-callout {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.help-callout.warning {
+    background: rgba(243, 156, 18, 0.1);
+    border: 1px solid rgba(243, 156, 18, 0.3);
+    color: #f39c12;
+}
+
 .help-content h3 {
     font-size: 0.95rem;
     color: var(--accent-cyan);

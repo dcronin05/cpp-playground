@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="/xterm/css/xterm.css" />
     
     <!-- Custom Styling -->
-    <link rel="stylesheet" href="index.css?v=2">
+    <link rel="stylesheet" href="index.css?v=3">
 </head>
 <body class="dark-theme">
     <div class="app-container">
@@ -152,6 +152,9 @@
                                 <li><strong>Header Includes:</strong> Type <code>#include &lt;set&gt;</code> to dynamically load new library headers into your session.</li>
                                 <li><strong>Script Editor:</strong> Write larger programs in the editor. Click <strong>Run Standalone</strong> to run the entire script (must have <code>int main()</code>) or <strong>Run in REPL</strong> to inject the editor script directly into the running session.</li>
                             </ul>
+                            <div class="help-callout warning">
+                                <strong>⚠️ AI & Code Safety Notice:</strong> Any code executed here runs as a native process inside the sandboxed container. If you are testing AI-generated C++ code, always verify it beforehand. Code execution is restricted by a 5-second timeout and 256MB memory limit to prevent runaway loops.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -167,6 +170,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script>
     
     <!-- Core Application Logic -->
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=3"></script>
 </body>
 </html>
