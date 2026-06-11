@@ -9,6 +9,9 @@ on:
 jobs:
   rebuild:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # needed to push to ghcr.io
 
     steps:
       - name: Checkout
@@ -17,11 +20,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Rebuild and push (no cache — picks up base image patches)
         uses: docker/build-push-action@v5
@@ -30,9 +34,9 @@ jobs:
           push: true
           no-cache: true
           tags: |
-            dcronin05/cpp-playground:latest
-            dcronin05/cpp-playground:${{ github.run_id }}
+            ghcr.io/dcronin05/cpp-playground:latest
+            ghcr.io/dcronin05/cpp-playground:build-${{ github.run_id }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
+            org.opencontainers.image.source=https://github.com/dcronin05/cpp-playground
             rebuild.reason=scheduled-security-rebuild
