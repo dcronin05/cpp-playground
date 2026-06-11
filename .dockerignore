@@ -1,0 +1,7 @@
+node_modules/
+.env
+*.md
+!README.md
+.git/
+.gitignore
+agent_template.md
