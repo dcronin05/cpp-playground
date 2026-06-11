@@ -251,6 +251,31 @@ int main() {
             padding: { top: 10 }
         });
         
+        // Add keyboard actions
+        editor.addAction({
+            id: 'run-standalone',
+            label: 'Run Standalone Code',
+            keybindings: [
+                monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter
+            ],
+            run: function(ed) {
+                const btn = document.getElementById('btn-run-standalone');
+                if (btn) btn.click();
+            }
+        });
+        
+        editor.addAction({
+            id: 'run-in-repl',
+            label: 'Run Selected/All in REPL',
+            keybindings: [
+                monaco.KeyMod.Shift | monaco.KeyCode.Enter
+            ],
+            run: function(ed) {
+                const btn = document.getElementById('btn-run-repl');
+                if (btn) btn.click();
+            }
+        });
+        
         // Force initial layout pass
         setTimeout(() => {
             if (editor) editor.layout();
