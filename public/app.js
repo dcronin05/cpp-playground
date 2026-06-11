@@ -9,6 +9,14 @@ let history = [];
 let historyIndex = -1;
 let isExecuting = false;
 let cursorPosition = 0;
+let lastState = null;
+let autocompleteState = {
+    isActive: false,
+    matches: [],
+    index: 0,
+    originalWord: '',
+    wordStartIndex: 0
+};
 
 // Standard C++ templates for snippets
 const SNIPPETS = {
@@ -187,6 +195,7 @@ function updateStatus(cls, text) {
 // Update the code display panel with active variables and declarations
 function updateProgramStateView(state) {
     if (!state) return;
+    lastState = state;
     
     const pre = document.getElementById('state-code-view');
     let code = '';
@@ -283,6 +292,82 @@ int main() {
     });
 }
 
+// C++ Syntax Highlighter for Terminal (ANSI Escape Codes)
+function highlightCplusplus(code) {
+    const tokenColors = {
+        keyword: '\x1b[35m', // purple/magenta
+        type: '\x1b[36m',    // cyan
+        string: '\x1b[33m',  // yellow
+        number: '\x1b[32m',  // green
+        comment: '\x1b[90m', // grey
+        operator: '\x1b[37m',// white/grey
+        reset: '\x1b[0m'
+    };
+
+    const cxxKeywords = new Set(['if', 'else', 'for', 'while', 'do', 'return', 'break', 'continue', 'switch', 'case', 'default', 'using', 'namespace', 'class', 'struct', 'public', 'private', 'protected', 'const', 'new', 'delete', 'template', 'typename', 'operator']);
+    const cxxTypes = new Set(['int', 'double', 'float', 'char', 'bool', 'string', 'vector', 'auto', 'void', 'std', 'cout', 'cin', 'endl', 'map', 'set', 'pair', 'size_t']);
+
+    let regex = /(\/\/.*)|("(\\.|[^"\\])*")|('(\\.|[^'\\])*')|(\b\d+(?:\.\d+)?\b)|(\b[a-zA-Z_][a-zA-Z0-9_]*\b)|(\+|-|\*|\/|=|<|>|&|\||!|%|^|~|;|,|:|\(|\)|\{|\}|\[|\])/g;
+    
+    let lastIndex = 0;
+    let match;
+    let result = '';
+
+    regex.lastIndex = 0;
+    while ((match = regex.exec(code)) !== null) {
+        if (match.index > lastIndex) {
+            result += code.substring(lastIndex, match.index);
+        }
+        
+        let token = match[0];
+        if (match[1]) { // Comment
+            result += tokenColors.comment + token + tokenColors.reset;
+        } else if (match[2] || match[4]) { // String
+            result += tokenColors.string + token + tokenColors.reset;
+        } else if (match[6]) { // Number
+            result += tokenColors.number + token + tokenColors.reset;
+        } else if (match[7]) { // Identifier
+            if (cxxKeywords.has(token)) {
+                result += tokenColors.keyword + token + tokenColors.reset;
+            } else if (cxxTypes.has(token)) {
+                result += tokenColors.type + token + tokenColors.reset;
+            } else {
+                result += token;
+            }
+        } else { // Operator / punctuation
+            result += tokenColors.operator + token + tokenColors.reset;
+        }
+        
+        lastIndex = regex.lastIndex;
+    }
+    
+    if (lastIndex < code.length) {
+        result += code.substring(lastIndex);
+    }
+    
+    return result;
+}
+
+// Redraw command line with syntax highlighting
+function redrawCommandLine() {
+    term.write('\r\x1b[K');
+    term.write('\x1b[36mc++ > \x1b[0m');
+    term.write(highlightCplusplus(inputBuffer));
+    const moveLeft = inputBuffer.length - cursorPosition;
+    if (moveLeft > 0) {
+        term.write('\x1b[D'.repeat(moveLeft));
+    }
+}
+
+// Autocomplete suggestions list
+const STATIC_SUGGESTIONS = [
+    'std::', 'cout', 'cin', 'endl', 'vector', 'string', 'map', 'set',
+    'include', 'return', 'struct', 'class', 'auto', 'int', 'double',
+    'float', 'bool', 'char', 'const', 'void', 'push_back', 'size()',
+    'begin()', 'end()', 'clear()', 'insert', 'find', 'make_unique',
+    'make_shared', 'unique_ptr', 'shared_ptr', 'to_string'
+];
+
 // Set up Xterm.js terminal
 function initXterm() {
     term = new Terminal({
@@ -339,57 +424,115 @@ function initXterm() {
         for (let i = 0; i < data.length; i++) {
             const char = data[i];
             
+            if (char !== '\t') {
+                autocompleteState.isActive = false;
+            }
+            
             // Check for multi-character ANSI escape sequences first
             if (data.slice(i, i + 3) === '\x1b[A') { // Arrow Up
                 i += 2; // skip escape chars
                 if (history.length > 0 && historyIndex > 0) {
-                    term.write('\r\x1b[K\x1b[36mc++ > \x1b[0m');
                     historyIndex--;
                     inputBuffer = history[historyIndex];
-                    term.write(inputBuffer);
                     cursorPosition = inputBuffer.length;
+                    redrawCommandLine();
                 }
             } 
             else if (data.slice(i, i + 3) === '\x1b[B') { // Arrow Down
                 i += 2;
                 if (history.length > 0 && historyIndex < history.length) {
-                    term.write('\r\x1b[K\x1b[36mc++ > \x1b[0m');
                     historyIndex++;
                     if (historyIndex === history.length) {
                         inputBuffer = '';
                     } else {
                         inputBuffer = history[historyIndex];
                     }
-                    term.write(inputBuffer);
                     cursorPosition = inputBuffer.length;
+                    redrawCommandLine();
                 }
             } 
             else if (data.slice(i, i + 3) === '\x1b[D') { // Arrow Left
                 i += 2;
                 if (cursorPosition > 0) {
                     cursorPosition--;
-                    term.write('\x1b[D');
+                    redrawCommandLine();
                 }
             } 
             else if (data.slice(i, i + 3) === '\x1b[C') { // Arrow Right
                 i += 2;
                 if (cursorPosition < inputBuffer.length) {
                     cursorPosition++;
-                    term.write('\x1b[C');
+                    redrawCommandLine();
                 }
             }
             else if (data.slice(i, i + 3) === '\x1b[H' || data.slice(i, i + 3) === '\x1bOH') { // Home Key
                 i += 2;
                 if (cursorPosition > 0) {
-                    term.write('\x1b[D'.repeat(cursorPosition));
                     cursorPosition = 0;
+                    redrawCommandLine();
                 }
             }
             else if (data.slice(i, i + 3) === '\x1b[F' || data.slice(i, i + 3) === '\x1bOF') { // End Key
                 i += 2;
                 if (cursorPosition < inputBuffer.length) {
-                    term.write('\x1b[C'.repeat(inputBuffer.length - cursorPosition));
                     cursorPosition = inputBuffer.length;
+                    redrawCommandLine();
+                }
+            }
+            else if (char === '\t') { // Tab Key for autocomplete
+                // 1. Get suggestions list
+                let dynamicSuggestions = [];
+                if (lastState) {
+                    const varRegex = /\b(?:int|double|float|char|bool|auto|string|vector<[^>]+>)\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/g;
+                    lastState.locals.forEach(stmt => {
+                        let m;
+                        varRegex.lastIndex = 0;
+                        while ((m = varRegex.exec(stmt)) !== null) {
+                            dynamicSuggestions.push(m[1]);
+                        }
+                    });
+                    const funcRegex = /\b(?:void|int|double|float|char|bool|auto|string|struct|class)\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/g;
+                    lastState.globals.forEach(decl => {
+                        let m;
+                        funcRegex.lastIndex = 0;
+                        while ((m = funcRegex.exec(decl)) !== null) {
+                            dynamicSuggestions.push(m[1]);
+                        }
+                    });
+                }
+                const allSuggestions = Array.from(new Set([...STATIC_SUGGESTIONS, ...dynamicSuggestions]));
+
+                // 2. Autocomplete logic
+                if (autocompleteState.isActive) {
+                    if (autocompleteState.matches.length > 0) {
+                        autocompleteState.index = (autocompleteState.index + 1) % autocompleteState.matches.length;
+                        const selectedMatch = autocompleteState.matches[autocompleteState.index];
+                        inputBuffer = inputBuffer.slice(0, autocompleteState.wordStartIndex) + selectedMatch + inputBuffer.slice(cursorPosition);
+                        cursorPosition = autocompleteState.wordStartIndex + selectedMatch.length;
+                        redrawCommandLine();
+                    }
+                } else {
+                    const leftSide = inputBuffer.slice(0, cursorPosition);
+                    const match = leftSide.match(/[a-zA-Z0-9_:]+$/);
+                    if (match) {
+                        const currentWord = match[0];
+                        const wordStartIndex = cursorPosition - currentWord.length;
+                        const matches = allSuggestions.filter(s => s.startsWith(currentWord) && s !== currentWord);
+                        
+                        if (matches.length > 0) {
+                            autocompleteState = {
+                                isActive: true,
+                                matches,
+                                index: 0,
+                                originalWord: currentWord,
+                                wordStartIndex
+                            };
+                            const selectedMatch = matches[0];
+                            inputBuffer = inputBuffer.slice(0, wordStartIndex) + selectedMatch + inputBuffer.slice(cursorPosition);
+                            cursorPosition = wordStartIndex + selectedMatch.length;
+                            redrawCommandLine();
+                        }
+                    }
                 }
             }
             else if (char === '\r') { // Enter Key
@@ -412,27 +555,13 @@ function initXterm() {
                 if (cursorPosition > 0) {
                     inputBuffer = inputBuffer.slice(0, cursorPosition - 1) + inputBuffer.slice(cursorPosition);
                     cursorPosition--;
-                    term.write('\b\x1b[K'); // Move cursor left and clear to the right
-                    const remainder = inputBuffer.slice(cursorPosition);
-                    term.write(remainder);
-                    // Move terminal cursor back to cursorPosition
-                    const moveLeft = inputBuffer.length - cursorPosition;
-                    if (moveLeft > 0) {
-                        term.write('\x1b[D'.repeat(moveLeft));
-                    }
+                    redrawCommandLine();
                 }
             } 
             else if (char.charCodeAt(0) >= 32 && char.charCodeAt(0) <= 126) { // Printable ASCII
                 inputBuffer = inputBuffer.slice(0, cursorPosition) + char + inputBuffer.slice(cursorPosition);
-                term.write('\x1b[K'); // Clear line to the right
-                const remainder = inputBuffer.slice(cursorPosition);
-                term.write(remainder);
                 cursorPosition++;
-                // Move cursor back to the right position
-                const moveLeft = inputBuffer.length - cursorPosition;
-                if (moveLeft > 0) {
-                    term.write('\x1b[D'.repeat(moveLeft));
-                }
+                redrawCommandLine();
             }
         }
     });
