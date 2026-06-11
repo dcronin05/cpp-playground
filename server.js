@@ -153,6 +153,7 @@ wss.on('connection', (ws) => {
                         ],
                         globals: [],
                         locals: [],
+                        stdinHistory: [],
                         ws,
                         cleanupTimer: null,
                         idleTimer: null,
@@ -186,6 +187,7 @@ wss.on('connection', (ws) => {
             resetIdleTimeout(session);
 
             if (data.type === 'repl_stdin') {
+                session.stdinHistory.push(data.data);
                 if (session.activeProcess) {
                     session.activeProcess.stdin.write(data.data);
                 }
@@ -243,8 +245,15 @@ wss.on('connection', (ws) => {
                         // Compiled successfully as local statement! Execute it with a timeout
                         ws.send(JSON.stringify({ type: 'status', message: 'Running...' }));
                         
-                        const child = spawn('bash', ['-c', `ulimit -u 512 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}`], { detached: true });
+                        const child = spawn('bash', ['-c', `ulimit -u 512 -f 51200; timeout -s KILL 5 ${binPath}`], {
+                            detached: true,
+                            stdio: ['pipe', 'pipe', 'pipe']
+                        });
                         session.activeProcess = child;
+                        
+                        if (session.stdinHistory.length > 0) {
+                            child.stdin.write(session.stdinHistory.join(''));
+                        }
                         
                         let runError = '';
                         
@@ -339,7 +348,10 @@ wss.on('connection', (ws) => {
 
                     ws.send(JSON.stringify({ type: 'status', message: 'Running standalone script...' }));
                     
-                    const child = spawn('bash', ['-c', `ulimit -u 512 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}`], { detached: true });
+                    const child = spawn('bash', ['-c', `ulimit -u 512 -f 51200; timeout -s KILL 5 ${binPath}`], {
+                        detached: true,
+                        stdio: ['pipe', 'pipe', 'pipe']
+                    });
                     session.activeProcess = child;
                     
                     let runError = '';
@@ -384,6 +396,7 @@ wss.on('connection', (ws) => {
                 ws.send(JSON.stringify({ type: 'status', message: 'Resetting playground session...' }));
                 session.globals = [];
                 session.locals = [];
+                session.stdinHistory = [];
                 
                 try {
                     // Clean and recreate directory
