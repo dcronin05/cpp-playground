@@ -185,7 +185,7 @@ wss.on('connection', (ws) => {
 
                     try {
                         await writeLocalFile(tempCppPath, dummyCode);
-                        const compileRes = await runCommand(`clang++ -std=c++17 ${tempCppPath} -o ${tempBinPath}`);
+                        const compileRes = await runCommand(`timeout 30 clang++ -std=c++17 ${tempCppPath} -o ${tempBinPath}`);
                         
                         // Clean up
                         await fs.promises.rm(tempCppPath, { force: true });
@@ -214,13 +214,13 @@ wss.on('connection', (ws) => {
 
                 try {
                     await writeLocalFile(cppPath, localSource);
-                    const compileRes = await runCommand(`clang++ -std=c++17 -O0 ${cppPath} -o ${binPath}`);
+                    const compileRes = await runCommand(`timeout 30 clang++ -std=c++17 -O0 ${cppPath} -o ${binPath}`);
 
                     if (!compileRes.error) {
                         // Compiled successfully as local statement! Execute it with a timeout
                         ws.send(JSON.stringify({ type: 'status', message: 'Running...' }));
                         
-                        const runRes = await runCommand(`timeout -s KILL 5 ${binPath}`);
+                        const runRes = await runCommand(`sh -c 'ulimit -u 64 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}'`);
                         
                         // Cleanup
                         await fs.promises.rm(cppPath, { force: true });
@@ -250,7 +250,7 @@ wss.on('connection', (ws) => {
                     const globalBinPath = path.join(session.dir, 'temp_global');
 
                     await writeLocalFile(globalCppPath, globalSource);
-                    const compileGlobalRes = await runCommand(`clang++ -std=c++17 -O0 ${globalCppPath} -o ${globalBinPath}`);
+                    const compileGlobalRes = await runCommand(`timeout 30 clang++ -std=c++17 -O0 ${globalCppPath} -o ${globalBinPath}`);
                     
                     // Cleanup
                     await fs.promises.rm(globalCppPath, { force: true });
@@ -282,7 +282,7 @@ wss.on('connection', (ws) => {
 
                 try {
                     await writeLocalFile(cppPath, codeInput);
-                    const compileRes = await runCommand(`clang++ -std=c++17 -O2 ${cppPath} -o ${binPath}`);
+                    const compileRes = await runCommand(`timeout 30 clang++ -std=c++17 -O2 ${cppPath} -o ${binPath}`);
 
                     if (compileRes.error) {
                         ws.send(JSON.stringify({ type: 'output', error: compileRes.stderr }));
@@ -291,7 +291,7 @@ wss.on('connection', (ws) => {
                     }
 
                     ws.send(JSON.stringify({ type: 'status', message: 'Running standalone script...' }));
-                    const runRes = await runCommand(`timeout -s KILL 5 ${binPath}`);
+                    const runRes = await runCommand(`sh -c 'ulimit -u 64 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}'`);
 
                     // Cleanup
                     await fs.promises.rm(cppPath, { force: true });
