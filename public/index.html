@@ -23,19 +23,16 @@
         <header class="app-header">
             <div class="logo-area">
                 <svg class="cpp-logo" viewBox="0 0 100 100" width="32" height="32">
-                    <circle cx="50" cy="50" r="45" fill="none" stroke="url(#logo-grad)" stroke-width="8" />
-                    <text x="28" y="66" fill="#fff" font-family="'JetBrains Mono', monospace" font-size="48" font-weight="bold">C</text>
-                    <path d="M 68,42 L 68,58 M 60,50 L 76,50 M 82,42 L 82,58 M 74,50 L 90,50" stroke="#00f2fe" stroke-width="4" stroke-linecap="round" />
-                    <defs>
-                        <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stop-color="#4facfe" />
-                            <stop offset="100%" stop-color="#00f2fe" />
-                        </linearGradient>
-                    </defs>
+                    <!-- Prompt chevron -->
+                    <path d="M 15,25 L 40,50 L 15,75" fill="none" stroke="#4fc1ff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+                    <!-- First C++ Plus -->
+                    <path d="M 50,50 L 70,50 M 60,40 L 60,60" fill="none" stroke="#d4d4d4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+                    <!-- Second C++ Plus -->
+                    <path d="M 75,50 L 95,50 M 85,40 L 85,60" fill="none" stroke="#d4d4d4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
                 <div class="logo-text">
-                    <h1>C++ Playground</h1>
-                    <span>Interactive Compiler Console</span>
+                    <h1>c++ &gt;<span class="blink-cursor">_</span></h1>
+                    <span>repl &amp; script environment</span>
                 </div>
             </div>
             
@@ -57,20 +54,20 @@
             <section class="panel-card editor-card">
                 <div class="panel-header">
                     <div class="panel-title">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                         <h2>Script Editor</h2>
                     </div>
                     <div class="panel-actions">
-                        <button id="btn-run-standalone" class="btn btn-primary btn-glow" title="Compile and run standalone code (requires int main)">
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                        <button id="btn-run-standalone" class="btn btn-primary" title="Compile and run standalone code (requires int main)">
+                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                             Run Standalone
                         </button>
                         <button id="btn-run-repl" class="btn btn-secondary" title="Execute editor selection or all lines inside the REPL context">
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
                             Run in REPL
                         </button>
                         <button id="btn-clear-editor" class="btn btn-icon" title="Clear Editor">
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </div>
                 </div>
@@ -78,6 +75,9 @@
                     <div id="editor-container"></div>
                 </div>
             </section>
+
+            <!-- PANES SPLITTER -->
+            <div id="panes-splitter" class="panes-splitter"></div>
 
             <!-- RIGHT COLUMN: TERMINAL REPL -->
             <section class="panel-card terminal-card">
@@ -98,6 +98,9 @@
                 </div>
             </section>
         </main>
+
+        <!-- VERTICAL SPLITTER -->
+        <div id="vertical-splitter" class="vertical-splitter"></div>
 
         <!-- SIDEBAR / LOWER SECTION: STATE INSPECTOR & SNIPPETS -->
         <footer class="app-footer">

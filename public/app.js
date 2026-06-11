@@ -217,6 +217,19 @@ function updateProgramStateView(state) {
 function initMonaco() {
     require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' } });
     require(['vs/editor/editor.main'], () => {
+        // Define unified premium dark theme
+        monaco.editor.defineTheme('soft-charcoal', {
+            base: 'vs-dark',
+            inherit: true,
+            rules: [],
+            colors: {
+                'editor.background': '#181818',
+                'editorGutter.background': '#181818',
+                'minimap.background': '#181818',
+                'editor.lineHighlightBackground': '#222222'
+            }
+        });
+        
         editor = monaco.editor.create(document.getElementById('editor-container'), {
             value: `// Write a full C++ program to run as Standalone,
 // or write variables/functions to inject in the REPL.
@@ -229,7 +242,7 @@ int main() {
     return 0;
 }`,
             language: 'cpp',
-            theme: 'vs-dark',
+            theme: 'soft-charcoal',
             automaticLayout: true,
             fontSize: 13,
             fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
@@ -237,6 +250,11 @@ int main() {
             lineHeight: 20,
             padding: { top: 10 }
         });
+        
+        // Force initial layout pass
+        setTimeout(() => {
+            if (editor) editor.layout();
+        }, 100);
     });
 }
 
@@ -245,10 +263,27 @@ function initXterm() {
     term = new Terminal({
         cursorBlink: true,
         theme: {
-            background: '#030712',
-            foreground: '#f1f5f9',
-            cursor: '#00f2fe',
-            selectionBackground: 'rgba(0, 242, 254, 0.3)'
+            background: '#181818',
+            foreground: '#d4d4d4',
+            cursor: '#528bff',
+            cursorAccent: '#181818',
+            selectionBackground: 'rgba(38, 79, 120, 0.5)',
+            black: '#000000',
+            red: '#f44747',
+            green: '#608b4e',
+            yellow: '#dcdcaa',
+            blue: '#569cd6',
+            magenta: '#c586c0',
+            cyan: '#4ec9b0',
+            white: '#d4d4d4',
+            brightBlack: '#808080',
+            brightRed: '#f44747',
+            brightGreen: '#608b4e',
+            brightYellow: '#dcdcaa',
+            brightBlue: '#569cd6',
+            brightMagenta: '#c586c0',
+            brightCyan: '#4ec9b0',
+            brightWhite: '#ffffff'
         },
         fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
         fontSize: 13,
@@ -465,8 +500,131 @@ function setupEventHandlers() {
     });
 }
 
+// Initialize drag splitters for resizable panes
+function initSplitters() {
+    const horizontalSplitter = document.getElementById('panes-splitter');
+    const verticalSplitter = document.getElementById('vertical-splitter');
+    const appMain = document.querySelector('.app-main');
+    const appFooter = document.querySelector('.app-footer');
+    
+    // Load persisted vertical height on boot
+    const savedFooterHeight = localStorage.getItem('footer_height');
+    if (savedFooterHeight && appFooter) {
+        appFooter.style.height = savedFooterHeight;
+    }
+    
+    // Load persisted horizontal ratio on boot
+    const savedRatio = localStorage.getItem('splitter_ratio');
+    if (savedRatio && appMain) {
+        appMain.style.gridTemplateColumns = `${savedRatio} 6px 1fr`;
+    }
+    
+    // 1. Horizontal split dragging (Left vs Right)
+    if (horizontalSplitter && appMain) {
+        let isDragging = false;
+        
+        horizontalSplitter.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            horizontalSplitter.classList.add('active');
+            
+            document.querySelectorAll('#editor-container, #terminal-container').forEach(el => {
+                el.style.pointerEvents = 'none';
+            });
+        });
+        
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const mainRect = appMain.getBoundingClientRect();
+            const relativeX = e.clientX - mainRect.left;
+            const totalWidth = mainRect.width;
+            
+            const minWidth = 200;
+            let leftWidth = relativeX;
+            if (leftWidth < minWidth) leftWidth = minWidth;
+            if (leftWidth > totalWidth - minWidth - 6) leftWidth = totalWidth - minWidth - 6;
+            
+            const ratio = `${leftWidth}px`;
+            appMain.style.gridTemplateColumns = `${ratio} 6px 1fr`;
+            localStorage.setItem('splitter_ratio', ratio);
+            
+            if (editor) editor.layout();
+            if (fitAddon) fitAddon.fit();
+        });
+        
+        window.addEventListener('mouseup', () => {
+            if (!isDragging) return;
+            isDragging = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            horizontalSplitter.classList.remove('active');
+            
+            document.querySelectorAll('#editor-container, #terminal-container').forEach(el => {
+                el.style.pointerEvents = '';
+            });
+            
+            if (editor) editor.layout();
+            if (fitAddon) fitAddon.fit();
+        });
+    }
+    
+    // 2. Vertical split dragging (Main Grid vs Footer)
+    if (verticalSplitter && appMain && appFooter) {
+        let isDragging = false;
+        
+        verticalSplitter.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+            verticalSplitter.classList.add('active');
+            
+            document.querySelectorAll('#editor-container, #terminal-container').forEach(el => {
+                el.style.pointerEvents = 'none';
+            });
+        });
+        
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const totalHeight = window.innerHeight;
+            const minFooterHeight = 60;
+            // header is 48px, splitter is 6px, leave at least 150px for main editor
+            const maxFooterHeight = totalHeight - 48 - 6 - 150;
+            
+            let footerHeight = totalHeight - e.clientY;
+            if (footerHeight < minFooterHeight) footerHeight = minFooterHeight;
+            if (footerHeight > maxFooterHeight) footerHeight = maxFooterHeight;
+            
+            const heightStr = `${footerHeight}px`;
+            appFooter.style.height = heightStr;
+            localStorage.setItem('footer_height', heightStr);
+            
+            if (editor) editor.layout();
+            if (fitAddon) fitAddon.fit();
+        });
+        
+        window.addEventListener('mouseup', () => {
+            if (!isDragging) return;
+            isDragging = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            verticalSplitter.classList.remove('active');
+            
+            document.querySelectorAll('#editor-container, #terminal-container').forEach(el => {
+                el.style.pointerEvents = '';
+            });
+            
+            if (editor) editor.layout();
+            if (fitAddon) fitAddon.fit();
+        });
+    }
+}
+
 // Main Setup Entrypoint
 window.onload = () => {
+    initSplitters(); // Setup splitter layout dimensions first
     initMonaco();
     initXterm();
     setupEventHandlers();
