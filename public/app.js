@@ -125,6 +125,15 @@ function initWebSocket() {
             sessionId = data.sessionId;
             localStorage.setItem('cpp_repl_session_id', sessionId);
             document.getElementById('session-id-display').textContent = sessionId.substring(0, 8);
+            
+            // Display version (truncated to 7 chars if it is a commit hash)
+            const versionEl = document.getElementById('version-display');
+            if (versionEl && data.version) {
+                const displayVer = data.version.length === 40 ? data.version.substring(0, 7) : data.version;
+                versionEl.textContent = displayVer;
+                versionEl.style.display = 'block';
+            }
+            
             updateStatus('connected', 'Connected');
             
             // Render the cumulative compilation state

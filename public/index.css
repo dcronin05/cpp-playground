@@ -176,6 +176,17 @@ body {
     color: var(--accent-cyan);
 }
 
+.version-display {
+    font-size: 0.65rem;
+    font-family: var(--font-mono);
+    color: #555555;
+    background-color: #222222;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    user-select: none;
+    border: 1px solid #2d2d2d;
+}
+
 /* Main Split View */
 .app-main {
     display: grid;

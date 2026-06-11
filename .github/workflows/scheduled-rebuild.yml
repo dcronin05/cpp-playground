@@ -36,6 +36,8 @@ jobs:
           context: .
           push: true
           no-cache: true
+          build-args: |
+            COMMIT_SHA=${{ github.sha }}
           tags: |
             ghcr.io/dcronin05/cpp-playground:latest
             ghcr.io/dcronin05/cpp-playground:build-${{ github.run_id }}

@@ -3,6 +3,10 @@ FROM node:20-slim
 # Prevent interactive prompts during package install
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Accept build version metadata
+ARG COMMIT_SHA=dev
+ENV COMMIT_SHA=${COMMIT_SHA}
+
 # Install Clang, standard C++ library, and core build tools
 RUN apt-get update && apt-get install -y \
     clang \

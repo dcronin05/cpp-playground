@@ -155,6 +155,7 @@ wss.on('connection', (ws) => {
                 ws.send(JSON.stringify({
                     type: 'init_ok',
                     sessionId,
+                    version: process.env.COMMIT_SHA || 'dev',
                     state: {
                         headers: session.headers,
                         globals: session.globals,
