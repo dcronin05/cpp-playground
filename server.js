@@ -37,6 +37,19 @@ async function writeLocalFile(filePath, content) {
     await fs.promises.writeFile(filePath, content, 'utf8');
 }
 
+// Helper: kill running active process and its descendants
+function killActiveProcess(session) {
+    if (session.activeProcess) {
+        try {
+            // Kill the entire process group (negative PID) since process is spawned with { detached: true }
+            process.kill(-session.activeProcess.pid, 'SIGKILL');
+        } catch (e) {
+            // ignore
+        }
+        session.activeProcess = null;
+    }
+}
+
 // Helper: Generate C++ code structure for REPL compilation
 function generateCode(session, newCode, isGlobal) {
     let code = '';
@@ -180,10 +193,7 @@ wss.on('connection', (ws) => {
             }
 
             if (data.type === 'repl_execute') {
-                if (session.activeProcess) {
-                    session.activeProcess.kill('SIGKILL');
-                    session.activeProcess = null;
-                }
+                killActiveProcess(session);
                 const codeInput = data.code.trim();
                 if (!codeInput) return;
 
@@ -233,7 +243,7 @@ wss.on('connection', (ws) => {
                         // Compiled successfully as local statement! Execute it with a timeout
                         ws.send(JSON.stringify({ type: 'status', message: 'Running...' }));
                         
-                        const child = spawn('bash', ['-c', `ulimit -u 64 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}`]);
+                        const child = spawn('bash', ['-c', `ulimit -u 512 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}`], { detached: true });
                         session.activeProcess = child;
                         
                         let runError = '';
@@ -310,10 +320,7 @@ wss.on('connection', (ws) => {
             }
 
             if (data.type === 'standalone_run') {
-                if (session.activeProcess) {
-                    session.activeProcess.kill('SIGKILL');
-                    session.activeProcess = null;
-                }
+                killActiveProcess(session);
                 const codeInput = data.code;
                 ws.send(JSON.stringify({ type: 'status', message: 'Compiling standalone script...' }));
 
@@ -332,7 +339,7 @@ wss.on('connection', (ws) => {
 
                     ws.send(JSON.stringify({ type: 'status', message: 'Running standalone script...' }));
                     
-                    const child = spawn('bash', ['-c', `ulimit -u 64 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}`]);
+                    const child = spawn('bash', ['-c', `ulimit -u 512 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}`], { detached: true });
                     session.activeProcess = child;
                     
                     let runError = '';
@@ -373,10 +380,7 @@ wss.on('connection', (ws) => {
             }
 
             if (data.type === 'reset') {
-                if (session.activeProcess) {
-                    session.activeProcess.kill('SIGKILL');
-                    session.activeProcess = null;
-                }
+                killActiveProcess(session);
                 ws.send(JSON.stringify({ type: 'status', message: 'Resetting playground session...' }));
                 session.globals = [];
                 session.locals = [];
@@ -407,10 +411,7 @@ wss.on('connection', (ws) => {
             const session = sessions.get(currentSessionId);
             session.ws = null;
             
-            if (session.activeProcess) {
-                session.activeProcess.kill('SIGKILL');
-                session.activeProcess = null;
-            }
+            killActiveProcess(session);
             
             console.log(`Client disconnected from session: ${currentSessionId}. Starting grace period.`);
             
