@@ -220,7 +220,7 @@ wss.on('connection', (ws) => {
                         // Compiled successfully as local statement! Execute it with a timeout
                         ws.send(JSON.stringify({ type: 'status', message: 'Running...' }));
                         
-                        const runRes = await runCommand(`sh -c 'ulimit -u 64 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}'`);
+                        const runRes = await runCommand(`bash -c 'ulimit -u 64 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}'`);
                         
                         // Cleanup
                         await fs.promises.rm(cppPath, { force: true });
@@ -291,7 +291,7 @@ wss.on('connection', (ws) => {
                     }
 
                     ws.send(JSON.stringify({ type: 'status', message: 'Running standalone script...' }));
-                    const runRes = await runCommand(`sh -c 'ulimit -u 64 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}'`);
+                    const runRes = await runCommand(`bash -c 'ulimit -u 64 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}'`);
 
                     // Cleanup
                     await fs.promises.rm(cppPath, { force: true });
