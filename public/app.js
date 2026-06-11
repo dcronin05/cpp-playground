@@ -307,7 +307,7 @@ function highlightCplusplus(code) {
     const cxxKeywords = new Set(['if', 'else', 'for', 'while', 'do', 'return', 'break', 'continue', 'switch', 'case', 'default', 'using', 'namespace', 'class', 'struct', 'public', 'private', 'protected', 'const', 'new', 'delete', 'template', 'typename', 'operator']);
     const cxxTypes = new Set(['int', 'double', 'float', 'char', 'bool', 'string', 'vector', 'auto', 'void', 'std', 'cout', 'cin', 'endl', 'map', 'set', 'pair', 'size_t']);
 
-    let regex = /(\/\/.*)|("(\\.|[^"\\])*")|('(\\.|[^'\\])*')|(\b\d+(?:\.\d+)?\b)|(\b[a-zA-Z_][a-zA-Z0-9_]*\b)|(\+|-|\*|\/|=|<|>|&|\||!|%|^|~|;|,|:|\(|\)|\{|\}|\[|\])/g;
+    let regex = /(\/\/.*)|("(\\.|[^"\\])*")|('(\\.|[^'\\])*')|(\b\d+(?:\.\d+)?\b)|(\b[a-zA-Z_][a-zA-Z0-9_]*\b)|(\+|-|\*|\/|=|<|>|&|\||!|%|\^|~|;|,|:|\(|\)|\{|\}|\[|\])/g;
     
     let lastIndex = 0;
     let match;
@@ -315,6 +315,12 @@ function highlightCplusplus(code) {
 
     regex.lastIndex = 0;
     while ((match = regex.exec(code)) !== null) {
+        // Prevent infinite loops on zero-width matches
+        if (match[0].length === 0) {
+            regex.lastIndex++;
+            continue;
+        }
+        
         if (match.index > lastIndex) {
             result += code.substring(lastIndex, match.index);
         }
@@ -348,15 +354,25 @@ function highlightCplusplus(code) {
     return result;
 }
 
-// Redraw command line with syntax highlighting
+// Redraw command line with syntax highlighting (flicker-free single pass write)
 function redrawCommandLine() {
-    term.write('\r\x1b[K');
-    term.write('\x1b[36mc++ > \x1b[0m');
-    term.write(highlightCplusplus(inputBuffer));
+    let output = '\r\x1b[K';
+    output += '\x1b[36mc++ > \x1b[0m';
+    output += highlightCplusplus(inputBuffer);
+    
+    // Clamp cursor position safely within bounds
+    if (typeof cursorPosition !== 'number' || isNaN(cursorPosition) || cursorPosition < 0) {
+        cursorPosition = 0;
+    }
+    if (cursorPosition > inputBuffer.length) {
+        cursorPosition = inputBuffer.length;
+    }
+    
     const moveLeft = inputBuffer.length - cursorPosition;
     if (moveLeft > 0) {
-        term.write('\x1b[D'.repeat(moveLeft));
+        output += '\x1b[D'.repeat(moveLeft);
     }
+    term.write(output);
 }
 
 // Autocomplete suggestions list
