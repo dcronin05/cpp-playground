@@ -1,0 +1,38 @@
+name: Bi-monthly security rebuild
+
+on:
+  schedule:
+    # 1st and 15th of every month at midnight UTC
+    - cron: '0 0 1,15 * *'
+  workflow_dispatch:  # allow manual trigger
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Rebuild and push (no cache — picks up base image patches)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          no-cache: true
+          tags: |
+            dcronin05/cpp-playground:latest
+            dcronin05/cpp-playground:${{ github.run_id }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
+            rebuild.reason=scheduled-security-rebuild
