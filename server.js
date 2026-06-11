@@ -1,7 +1,7 @@
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
@@ -142,7 +142,8 @@ wss.on('connection', (ws) => {
                         locals: [],
                         ws,
                         cleanupTimer: null,
-                        idleTimer: null
+                        idleTimer: null,
+                        activeProcess: null
                     };
                     
                     sessions.set(sessionId, session);
@@ -170,7 +171,18 @@ wss.on('connection', (ws) => {
             }
             resetIdleTimeout(session);
 
+            if (data.type === 'repl_stdin') {
+                if (session.activeProcess) {
+                    session.activeProcess.stdin.write(data.data);
+                }
+                return;
+            }
+
             if (data.type === 'repl_execute') {
+                if (session.activeProcess) {
+                    session.activeProcess.kill('SIGKILL');
+                    session.activeProcess = null;
+                }
                 const codeInput = data.code.trim();
                 if (!codeInput) return;
 
@@ -220,24 +232,47 @@ wss.on('connection', (ws) => {
                         // Compiled successfully as local statement! Execute it with a timeout
                         ws.send(JSON.stringify({ type: 'status', message: 'Running...' }));
                         
-                        const runRes = await runCommand(`bash -c 'ulimit -u 64 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}'`);
+                        const child = spawn('bash', ['-c', `ulimit -u 64 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}`]);
+                        session.activeProcess = child;
                         
-                        // Cleanup
-                        await fs.promises.rm(cppPath, { force: true });
-                        await fs.promises.rm(binPath, { force: true });
+                        let runError = '';
                         
-                        if (runRes.error && runRes.error.code === 124) {
-                            ws.send(JSON.stringify({ type: 'output', error: 'Execution timed out (5s limit exceeded).\n' }));
-                        } else {
-                            // Save statement
-                            session.locals.push(codeInput);
+                        child.stdout.on('data', (chunk) => {
+                            ws.send(JSON.stringify({ type: 'run_output', stdout: chunk.toString() }));
+                        });
+                        
+                        child.stderr.on('data', (chunk) => {
+                            ws.send(JSON.stringify({ type: 'run_output', stderr: chunk.toString() }));
+                        });
+                        
+                        child.on('close', async (code, signal) => {
+                            session.activeProcess = null;
+                            
+                            // Cleanup
+                            await fs.promises.rm(cppPath, { force: true });
+                            await fs.promises.rm(binPath, { force: true });
+                            
+                            if (code === 124 || signal === 'SIGKILL') {
+                                runError = 'Execution timed out (5s limit exceeded).\n';
+                            } else if (code !== 0 && code !== null) {
+                                runError = `Process exited with code ${code}\n`;
+                            } else if (signal) {
+                                runError = `Process terminated by signal ${signal}\n`;
+                            }
+                            
+                            if (!runError) {
+                                // Save statement only if executed successfully
+                                session.locals.push(codeInput);
+                            }
+                            
                             ws.send(JSON.stringify({
                                 type: 'output',
-                                stdout: runRes.stdout,
-                                stderr: runRes.stderr,
+                                stdout: '',
+                                stderr: '',
+                                error: runError || null,
                                 state: { headers: session.headers, globals: session.globals, locals: session.locals }
                             }));
-                        }
+                        });
                         return;
                     }
                     
@@ -274,6 +309,10 @@ wss.on('connection', (ws) => {
             }
 
             if (data.type === 'standalone_run') {
+                if (session.activeProcess) {
+                    session.activeProcess.kill('SIGKILL');
+                    session.activeProcess = null;
+                }
                 const codeInput = data.code;
                 ws.send(JSON.stringify({ type: 'status', message: 'Compiling standalone script...' }));
 
@@ -291,27 +330,52 @@ wss.on('connection', (ws) => {
                     }
 
                     ws.send(JSON.stringify({ type: 'status', message: 'Running standalone script...' }));
-                    const runRes = await runCommand(`bash -c 'ulimit -u 64 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}'`);
-
-                    // Cleanup
-                    await fs.promises.rm(cppPath, { force: true });
-                    await fs.promises.rm(binPath, { force: true });
-
-                    if (runRes.error && runRes.error.code === 124) {
-                        ws.send(JSON.stringify({ type: 'output', error: 'Execution timed out (5s limit exceeded).\n' }));
-                    } else {
+                    
+                    const child = spawn('bash', ['-c', `ulimit -u 64 -f 51200 -v 524288; timeout -s KILL 5 ${binPath}`]);
+                    session.activeProcess = child;
+                    
+                    let runError = '';
+                    
+                    child.stdout.on('data', (chunk) => {
+                        ws.send(JSON.stringify({ type: 'run_output', stdout: chunk.toString() }));
+                    });
+                    
+                    child.stderr.on('data', (chunk) => {
+                        ws.send(JSON.stringify({ type: 'run_output', stderr: chunk.toString() }));
+                    });
+                    
+                    child.on('close', async (code, signal) => {
+                        session.activeProcess = null;
+                        
+                        // Cleanup
+                        await fs.promises.rm(cppPath, { force: true });
+                        await fs.promises.rm(binPath, { force: true });
+                        
+                        if (code === 124 || signal === 'SIGKILL') {
+                            runError = 'Execution timed out (5s limit exceeded).\n';
+                        } else if (code !== 0 && code !== null) {
+                            runError = `Process exited with code ${code}\n`;
+                        } else if (signal) {
+                            runError = `Process terminated by signal ${signal}\n`;
+                        }
+                        
                         ws.send(JSON.stringify({
                             type: 'output',
-                            stdout: runRes.stdout,
-                            stderr: runRes.stderr
+                            stdout: '',
+                            stderr: '',
+                            error: runError || null
                         }));
-                    }
+                    });
                 } catch (err) {
                     ws.send(JSON.stringify({ type: 'error', message: `Internal standalone execution error: ${err.message}` }));
                 }
             }
 
             if (data.type === 'reset') {
+                if (session.activeProcess) {
+                    session.activeProcess.kill('SIGKILL');
+                    session.activeProcess = null;
+                }
                 ws.send(JSON.stringify({ type: 'status', message: 'Resetting playground session...' }));
                 session.globals = [];
                 session.locals = [];
@@ -341,6 +405,11 @@ wss.on('connection', (ws) => {
         if (currentSessionId && sessions.has(currentSessionId)) {
             const session = sessions.get(currentSessionId);
             session.ws = null;
+            
+            if (session.activeProcess) {
+                session.activeProcess.kill('SIGKILL');
+                session.activeProcess = null;
+            }
             
             console.log(`Client disconnected from session: ${currentSessionId}. Starting grace period.`);
             

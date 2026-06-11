@@ -8,6 +8,8 @@ let inputBuffer = '';
 let history = [];
 let historyIndex = -1;
 let isExecuting = false;
+let isRunning = false;
+let interactiveBuffer = '';
 let cursorPosition = 0;
 let lastState = null;
 let autocompleteState = {
@@ -139,10 +141,25 @@ function initWebSocket() {
             // Write transient status line
             term.write(`\r\x1b[K\x1b[90m[${data.message}]\x1b[0m`);
             isExecuting = true;
+            if (data.message.startsWith('Running')) {
+                isRunning = true;
+                term.write('\r\x1b[K'); // Clear status line for clean execution output
+            }
+        }
+        
+        else if (data.type === 'run_output') {
+            if (data.stdout) {
+                term.write(data.stdout.replace(/\n/g, '\r\n'));
+            }
+            if (data.stderr) {
+                term.write(`\x1b[31m${data.stderr.replace(/\n/g, '\r\n')}\x1b[0m`);
+            }
         }
         
         else if (data.type === 'output') {
             isExecuting = false;
+            isRunning = false;
+            interactiveBuffer = '';
             term.write('\r\x1b[K'); // clear compile status line
             
             if (data.stdout) {
@@ -166,6 +183,8 @@ function initWebSocket() {
         
         else if (data.type === 'error') {
             isExecuting = false;
+            isRunning = false;
+            interactiveBuffer = '';
             term.write('\r\x1b[K');
             term.write(`\x1b[1;31mServer Error: ${data.message}\r\n\x1b[0m`);
             term.write('\x1b[36mc++ > \x1b[0m');
@@ -175,6 +194,9 @@ function initWebSocket() {
     ws.onclose = () => {
         console.log('WebSocket connection closed');
         updateStatus('disconnected', 'Disconnected');
+        isExecuting = false;
+        isRunning = false;
+        interactiveBuffer = '';
         term.write('\r\n\x1b[31mConnection lost. Retrying in 5s...\x1b[0m\r\n');
         setTimeout(initWebSocket, 5000);
     };
@@ -435,7 +457,32 @@ function initXterm() {
     
     // Handle inputs
     term.onData(data => {
-        if (isExecuting) return; // Prevent typing while compile is in progress
+        if (isExecuting && !isRunning) return; // Prevent typing while compile is in progress
+        
+        if (isRunning) {
+            for (let i = 0; i < data.length; i++) {
+                const char = data[i];
+                if (char === '\r') {
+                    term.write('\r\n');
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'repl_stdin',
+                            data: interactiveBuffer + '\n'
+                        }));
+                    }
+                    interactiveBuffer = '';
+                } else if (char === '\x7f' || char === '\b') {
+                    if (interactiveBuffer.length > 0) {
+                        interactiveBuffer = interactiveBuffer.slice(0, -1);
+                        term.write('\b \b');
+                    }
+                } else if (char.charCodeAt(0) >= 32 && char.charCodeAt(0) <= 126) {
+                    interactiveBuffer += char;
+                    term.write(char);
+                }
+            }
+            return;
+        }
         
         for (let i = 0; i < data.length; i++) {
             const char = data[i];

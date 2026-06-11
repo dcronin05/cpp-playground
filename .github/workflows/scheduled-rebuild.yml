@@ -1,6 +1,9 @@
 name: Bi-monthly security rebuild
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     # 1st and 15th of every month at midnight UTC
     - cron: '0 0 1,15 * *'
