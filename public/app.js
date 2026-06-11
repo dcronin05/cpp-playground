@@ -8,6 +8,7 @@ let inputBuffer = '';
 let history = [];
 let historyIndex = -1;
 let isExecuting = false;
+let cursorPosition = 0;
 
 // Standard C++ templates for snippets
 const SNIPPETS = {
@@ -122,6 +123,8 @@ function initWebSocket() {
             // Print initial terminal screen
             term.write('\r\x1b[K'); // clear line
             term.write('\x1b[36mc++ > \x1b[0m');
+            inputBuffer = '';
+            cursorPosition = 0;
         }
         
         else if (data.type === 'status') {
@@ -149,6 +152,8 @@ function initWebSocket() {
             }
             
             term.write('\x1b[36mc++ > \x1b[0m');
+            inputBuffer = '';
+            cursorPosition = 0;
         }
         
         else if (data.type === 'error') {
@@ -274,7 +279,60 @@ function initXterm() {
         for (let i = 0; i < data.length; i++) {
             const char = data[i];
             
-            if (char === '\r') { // Enter Key
+            // Check for multi-character ANSI escape sequences first
+            if (data.slice(i, i + 3) === '\x1b[A') { // Arrow Up
+                i += 2; // skip escape chars
+                if (history.length > 0 && historyIndex > 0) {
+                    term.write('\r\x1b[K\x1b[36mc++ > \x1b[0m');
+                    historyIndex--;
+                    inputBuffer = history[historyIndex];
+                    term.write(inputBuffer);
+                    cursorPosition = inputBuffer.length;
+                }
+            } 
+            else if (data.slice(i, i + 3) === '\x1b[B') { // Arrow Down
+                i += 2;
+                if (history.length > 0 && historyIndex < history.length) {
+                    term.write('\r\x1b[K\x1b[36mc++ > \x1b[0m');
+                    historyIndex++;
+                    if (historyIndex === history.length) {
+                        inputBuffer = '';
+                    } else {
+                        inputBuffer = history[historyIndex];
+                    }
+                    term.write(inputBuffer);
+                    cursorPosition = inputBuffer.length;
+                }
+            } 
+            else if (data.slice(i, i + 3) === '\x1b[D') { // Arrow Left
+                i += 2;
+                if (cursorPosition > 0) {
+                    cursorPosition--;
+                    term.write('\x1b[D');
+                }
+            } 
+            else if (data.slice(i, i + 3) === '\x1b[C') { // Arrow Right
+                i += 2;
+                if (cursorPosition < inputBuffer.length) {
+                    cursorPosition++;
+                    term.write('\x1b[C');
+                }
+            }
+            else if (data.slice(i, i + 3) === '\x1b[H' || data.slice(i, i + 3) === '\x1bOH') { // Home Key
+                i += 2;
+                if (cursorPosition > 0) {
+                    term.write('\x1b[D'.repeat(cursorPosition));
+                    cursorPosition = 0;
+                }
+            }
+            else if (data.slice(i, i + 3) === '\x1b[F' || data.slice(i, i + 3) === '\x1bOF') { // End Key
+                i += 2;
+                if (cursorPosition < inputBuffer.length) {
+                    term.write('\x1b[C'.repeat(inputBuffer.length - cursorPosition));
+                    cursorPosition = inputBuffer.length;
+                }
+            }
+            else if (char === '\r') { // Enter Key
                 const cmd = inputBuffer.trim();
                 term.write('\r\n');
                 if (cmd) {
@@ -288,43 +346,33 @@ function initXterm() {
                     term.write('\x1b[36mc++ > \x1b[0m');
                 }
                 inputBuffer = '';
+                cursorPosition = 0;
             } 
             else if (char === '\x7f' || char === '\b') { // Backspace Key
-                if (inputBuffer.length > 0) {
-                    inputBuffer = inputBuffer.slice(0, -1);
-                    term.write('\b \b');
-                }
-            } 
-            else if (data.slice(i, i + 3) === '\x1b[A') { // Arrow Up
-                i += 2; // skip escape chars
-                if (history.length > 0 && historyIndex > 0) {
-                    // Backspace current characters
-                    for (let j = 0; j < inputBuffer.length; j++) {
-                        term.write('\b \b');
+                if (cursorPosition > 0) {
+                    inputBuffer = inputBuffer.slice(0, cursorPosition - 1) + inputBuffer.slice(cursorPosition);
+                    cursorPosition--;
+                    term.write('\b\x1b[K'); // Move cursor left and clear to the right
+                    const remainder = inputBuffer.slice(cursorPosition);
+                    term.write(remainder);
+                    // Move terminal cursor back to cursorPosition
+                    const moveLeft = inputBuffer.length - cursorPosition;
+                    if (moveLeft > 0) {
+                        term.write('\x1b[D'.repeat(moveLeft));
                     }
-                    historyIndex--;
-                    inputBuffer = history[historyIndex];
-                    term.write(inputBuffer);
-                }
-            } 
-            else if (data.slice(i, i + 3) === '\x1b[B') { // Arrow Down
-                i += 2;
-                if (history.length > 0 && historyIndex < history.length) {
-                    for (let j = 0; j < inputBuffer.length; j++) {
-                        term.write('\b \b');
-                    }
-                    historyIndex++;
-                    if (historyIndex === history.length) {
-                        inputBuffer = '';
-                    } else {
-                        inputBuffer = history[historyIndex];
-                    }
-                    term.write(inputBuffer);
                 }
             } 
             else if (char.charCodeAt(0) >= 32 && char.charCodeAt(0) <= 126) { // Printable ASCII
-                inputBuffer += char;
-                term.write(char);
+                inputBuffer = inputBuffer.slice(0, cursorPosition) + char + inputBuffer.slice(cursorPosition);
+                term.write('\x1b[K'); // Clear line to the right
+                const remainder = inputBuffer.slice(cursorPosition);
+                term.write(remainder);
+                cursorPosition++;
+                // Move cursor back to the right position
+                const moveLeft = inputBuffer.length - cursorPosition;
+                if (moveLeft > 0) {
+                    term.write('\x1b[D'.repeat(moveLeft));
+                }
             }
         }
     });
